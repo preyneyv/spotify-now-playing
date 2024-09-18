@@ -1,0 +1,97 @@
+#include "term-util.h"
+
+void detect_terminal_mode(ChafaTermInfo **term_info_out,
+                          ChafaCanvasMode *mode_out,
+                          ChafaPixelMode *pixel_mode_out) {
+  ChafaCanvasMode mode;
+  ChafaPixelMode pixel_mode;
+  ChafaTermInfo *term_info;
+
+  gchar **envp;
+  envp = g_get_environ();
+  term_info = chafa_term_db_detect(chafa_term_db_get_default(), envp);
+  g_strfreev(envp);
+
+  // Determine what the best possible image quality setting is.
+  if (chafa_term_info_have_seq(term_info,
+                               CHAFA_TERM_SEQ_BEGIN_KITTY_IMMEDIATE_IMAGE_V1)) {
+    pixel_mode = CHAFA_PIXEL_MODE_KITTY;
+    mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+  } else if (chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_BEGIN_ITERM2_IMAGE)) {
+    pixel_mode = CHAFA_PIXEL_MODE_ITERM2;
+    mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+  } else if (chafa_term_info_have_seq(term_info, CHAFA_TERM_SEQ_BEGIN_SIXELS)) {
+    pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
+    mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+  } else {
+    pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
+
+    if (chafa_term_info_have_seq(term_info,
+                                 CHAFA_TERM_SEQ_SET_COLOR_FGBG_DIRECT) &&
+        chafa_term_info_have_seq(term_info,
+                                 CHAFA_TERM_SEQ_SET_COLOR_FG_DIRECT) &&
+        chafa_term_info_have_seq(term_info, CHAFA_TERM_SEQ_SET_COLOR_BG_DIRECT))
+      mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+    else if (chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_SET_COLOR_FGBG_256) &&
+             chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_SET_COLOR_FG_256) &&
+             chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_SET_COLOR_BG_256)
+
+    )
+      mode = CHAFA_CANVAS_MODE_INDEXED_240;
+    else if (chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_SET_COLOR_FGBG_16) &&
+             chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_SET_COLOR_FG_16) &&
+             chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_SET_COLOR_BG_16))
+      mode = CHAFA_CANVAS_MODE_INDEXED_16;
+    else if (chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_INVERT_COLORS) &&
+             chafa_term_info_have_seq(term_info,
+                                      CHAFA_TERM_SEQ_RESET_ATTRIBUTES))
+      mode = CHAFA_CANVAS_MODE_FGBG_BGFG;
+    else
+      mode = CHAFA_CANVAS_MODE_FGBG;
+  }
+
+  *term_info_out = term_info;
+  *mode_out = mode;
+  *pixel_mode_out = pixel_mode;
+}
+
+TermSize get_tty_size() {
+  TermSize term_size;
+  term_size.width_cells = term_size.height_cells = term_size.width_pixels =
+      term_size.height_pixels = -1;
+
+  struct winsize w;
+  gboolean have_winsize = FALSE;
+
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) >= 0 ||
+      ioctl(STDERR_FILENO, TIOCGWINSZ, &w) >= 0 ||
+      ioctl(STDIN_FILENO, TIOCGWINSZ, &w) >= 0)
+    have_winsize = TRUE;
+
+  if (have_winsize) {
+    term_size.width_cells = w.ws_col;
+    term_size.height_cells = w.ws_row;
+    term_size.width_pixels = w.ws_xpixel;
+    term_size.height_pixels = w.ws_ypixel;
+  }
+
+  if (term_size.width_cells <= 0)
+    term_size.width_cells = -1;
+  if (term_size.height_cells <= 0)
+    term_size.height_cells = -1;
+
+  if (term_size.width_pixels <= 0 || term_size.height_pixels <= 0) {
+    term_size.width_pixels = -1;
+    term_size.height_pixels = -1;
+  }
+
+  return term_size;
+}
