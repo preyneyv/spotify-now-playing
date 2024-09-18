@@ -1,14 +1,43 @@
 #include <chafa.h>
+#include <libsoup/soup.h>
 #include <stdio.h>
 
+#include "libsoup/soup-message-headers.h"
+#include "libsoup/soup-message.h"
+#include "libsoup/soup-session.h"
 #include "term-util.h"
 
 #define PIX_WIDTH 3
 #define PIX_HEIGHT 3
 #define N_CHANNELS 4
 
-int main(void) {
+int fetch_webpage(void) {
+  printf("Trying to make a web request...\n");
+  SoupSession *session = soup_session_new();
+  SoupMessage *msg = soup_message_new(SOUP_METHOD_GET, "http://example.com");
+  GError *error = NULL;
+  GBytes *body = soup_session_send_and_read(session, msg, NULL, &error);
+  if (error) {
+    g_error_free(error);
+    g_bytes_unref(body);
+    g_object_unref(msg);
+    g_object_unref(session);
+    return 1;
+  }
 
+  guint sc;
+  char *reason_phrase;
+  g_object_get(msg, "status-code", &sc, "reason-phrase", &reason_phrase, NULL);
+
+  printf("%d: %s\n", sc, reason_phrase);
+
+  g_bytes_unref(body);
+  g_object_unref(msg);
+  g_object_unref(session);
+  return 0;
+}
+
+int main(void) {
   const guint8 pixels[PIX_WIDTH * PIX_HEIGHT * N_CHANNELS] = {
       0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0xff,
       0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff,
@@ -33,12 +62,11 @@ int main(void) {
     cell_height = term_size.height_pixels / term_size.height_cells;
     font_ratio = (gdouble)cell_width / (gdouble)cell_height;
   }
-  width_cells = term_size.width_cells;
-  height_cells = term_size.height_cells;
 
+  width_cells = 80;
+  height_cells = 20;
   chafa_calc_canvas_geometry(PIX_WIDTH, PIX_HEIGHT, &width_cells, &height_cells,
                              font_ratio, TRUE, FALSE);
-
   detect_terminal_mode(&term_info, &mode, &pixel_mode);
 
   symbol_map = chafa_symbol_map_new();
@@ -66,6 +94,9 @@ int main(void) {
   chafa_term_info_unref(term_info);
   chafa_canvas_config_unref(config);
   chafa_symbol_map_unref(symbol_map);
+
+  printf("look its a web request!\n");
+  fetch_webpage();
 
   return 0;
 }
