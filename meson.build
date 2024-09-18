@@ -2,7 +2,8 @@ project('spotify-now-playing', 'c')
 
 deps = [
   dependency('chafa', version: '>=1.14.4'),
-  dependency('libsoup-3.0', version: '>=3.6.0'),
+  dependency('libcurl', version: '>=7.87.0'),
+  dependency('jansson'),
 ]
 
 subdir('src')

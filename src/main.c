@@ -1,10 +1,13 @@
 #include <chafa.h>
-#include <libsoup/soup.h>
+// #include <libsoup/soup.h>
+#include <curl/curl.h>
+#include <curl/easy.h>
+#include <jansson.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "libsoup/soup-message-headers.h"
-#include "libsoup/soup-message.h"
-#include "libsoup/soup-session.h"
 #include "term-util.h"
 
 #define PIX_WIDTH 3
@@ -12,28 +15,161 @@
 #define N_CHANNELS 4
 
 int fetch_webpage(void) {
+  CURL *curl;
+  CURLcode res;
+
   printf("Trying to make a web request...\n");
-  SoupSession *session = soup_session_new();
-  SoupMessage *msg = soup_message_new(SOUP_METHOD_GET, "http://example.com");
-  GError *error = NULL;
-  GBytes *body = soup_session_send_and_read(session, msg, NULL, &error);
-  if (error) {
-    g_error_free(error);
-    g_bytes_unref(body);
-    g_object_unref(msg);
-    g_object_unref(session);
+  curl = curl_easy_init();
+  if (!curl) {
+    fprintf(stderr, "Failed to initialize curl\n");
+    curl_easy_cleanup(curl);
+    return 1;
+  }
+  curl_easy_setopt(curl, CURLOPT_URL, "https://www.google.com/");
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+  // curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, dummy_write_function);
+  FILE *out = fopen("test.html", "w");
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, out);
+  res = curl_easy_perform(curl);
+  fclose(out);
+
+  if (res != CURLE_OK) {
+    fprintf(stderr, "curl_easy_perform() failed: %s\n",
+            curl_easy_strerror(res));
+
+    curl_easy_cleanup(curl);
     return 1;
   }
 
-  guint sc;
-  char *reason_phrase;
-  g_object_get(msg, "status-code", &sc, "reason-phrase", &reason_phrase, NULL);
+  char *ct;
+  res = curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct);
+  if (res != CURLE_OK) {
+    fprintf(stderr, "easy_get_info(CONTENT_TYPE) failed: %s\n",
+            curl_easy_strerror(res));
+    curl_easy_cleanup(curl);
+    return 1;
+  }
+  long code;
+  res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+  if (res != CURLE_OK) {
+    fprintf(stderr, "easy_get_info(RESPONSE_CODE) failed: %s\n",
+            curl_easy_strerror(res));
+    curl_easy_cleanup(curl);
+    return 1;
+  }
+  printf("%ld: %s\n", code, ct);
+  return 0;
+}
 
-  printf("%d: %s\n", sc, reason_phrase);
+/** Null-terminated resizable buffer. */
+typedef struct {
+  char *contents;
+  size_t size;
+} MemoryBuffer;
 
-  g_bytes_unref(body);
-  g_object_unref(msg);
-  g_object_unref(session);
+/** Free allocated memory for the given buf */
+static void memory_buffer_free(MemoryBuffer *buf) {
+  if (!buf)
+    return;
+  free(buf->contents);
+  free(buf);
+}
+
+/** Allocate a new MemoryBuffer, prefilled to the given size. */
+static MemoryBuffer *memory_buffer_new_with_size(size_t size) {
+  MemoryBuffer *buf = malloc(sizeof(MemoryBuffer));
+  if (!buf)
+    return buf;
+  buf->contents = malloc(size + 1); // null-terminated
+  buf->size = 0;
+  return buf;
+}
+
+/** Allocate a new empty MemoryBuffer */
+static MemoryBuffer *memory_buffer_new() {
+  return memory_buffer_new_with_size(0);
+}
+
+/**
+ * Write bytes to the memory buffer
+ * @param buf buffer to write to
+ * @param data data to read from
+ * @param size number of bytes to copy
+ * @returns number of written bytes
+ */
+static size_t memory_buffer_write_bytes(MemoryBuffer *buf, char *data,
+                                        size_t size) {
+  char *new_contents = realloc(buf->contents, buf->size + size + 1);
+  if (!new_contents)
+    return 0; // out of memory (yikes)
+
+  buf->contents = new_contents;
+  memcpy(&(buf->contents[buf->size]), data, size);
+  buf->size += size;
+  buf->contents[buf->size] = 0;
+  return size;
+}
+
+static size_t memory_buffer_libcurl_write_function(char *data, size_t size,
+                                                   size_t nmemb,
+                                                   MemoryBuffer *buf) {
+  size_t chunk_size = size * nmemb;
+  return memory_buffer_write_bytes(buf, data, chunk_size);
+}
+
+int fake_fetch_api(void) {
+  MemoryBuffer *response;
+
+  {
+    CURL *curl;
+    CURLcode res;
+
+    if (!(curl = curl_easy_init())) {
+      curl_easy_cleanup(curl);
+      return 1;
+    }
+    curl_easy_setopt(curl, CURLOPT_URL,
+                     "https://jsonplaceholder.typicode.com/todos/1");
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+
+    response = memory_buffer_new();
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                     memory_buffer_libcurl_write_function);
+
+    if ((res = curl_easy_perform(curl)) != CURLE_OK) {
+      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+              curl_easy_strerror(res));
+      curl_easy_cleanup(curl);
+      memory_buffer_free(response);
+      return 1;
+    }
+
+    curl_easy_cleanup(curl);
+  }
+
+  json_t *root;
+  json_error_t error;
+  root = json_loads(response->contents, 0, &error);
+  memory_buffer_free(response);
+
+  if (!root) {
+    fprintf(stderr, "error: on line %d: %s\n", error.line, error.text);
+    return 1;
+  }
+
+  if (!json_is_object(root)) {
+    fprintf(stderr, "error: not an array\n");
+    return 1;
+  }
+
+  printf("title from api: %s\n",
+         json_string_value(json_object_get(root, "title")));
+  json_decref(root);
+  printf("is completed?: %s\n",
+         json_boolean_value(json_object_get(root, "completed")) ? "yes" : "no");
+  json_decref(root);
+
   return 0;
 }
 
@@ -96,7 +232,7 @@ int main(void) {
   chafa_symbol_map_unref(symbol_map);
 
   printf("look its a web request!\n");
-  fetch_webpage();
+  fake_fetch_api();
 
   return 0;
 }
