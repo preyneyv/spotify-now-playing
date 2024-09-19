@@ -1,0 +1,11 @@
+#ifndef __SNP_CONSTANTS_H__
+#define __SNP_CONSTANTS_H__
+
+#define SNP_SPOTIFY_AUTH_CLIENT_ID "53dbf71998334c31ab1f6657715621a8"
+#define SNP_SPOTIFY_AUTH_REDIRECT_URI "http%%3a%%2f%%2flocalhost%%3a3000"
+
+#define SNP_SPOTIFY_AUTH_HOST "https://accounts.spotify.com"
+#define SNP_SPOTIFY_AUTH_AUTHORIZE_ENDPOINT SNP_SPOTIFY_AUTH_HOST "/authorize"
+#define SNP_SPOTIFY_AUTH_TOKEN_ENDPOINT SNP_SPOTIFY_AUTH_HOST "/api/token"
+
+#endif /* __SNP_CONSTANTS_H__ */
