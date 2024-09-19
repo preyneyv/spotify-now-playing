@@ -15,4 +15,5 @@ meson compile
 ## Dependencies
 
 - `chafa` >=1.14.4
-- `libsoup-3.0` >=3.6.0
+- `libcurl` >=7.87.0
+- `jansson` ==2.14 (from source)
