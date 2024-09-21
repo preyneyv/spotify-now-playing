@@ -79,16 +79,8 @@ void print_test_pattern(void) {
   chafa_symbol_map_unref(symbol_map);
 }
 
-#define CB_PORT 3000
-int http_server_cb(HttpRequest *req, HttpResponse *res, void *usr) {
-  res->code = 404;
-  sprintf(res->body, "you said %s to %s", http_request_query_get(req, "param"),
-          req->path);
-  return 0;
-}
-
 int main(void) {
-  printf("waiting...\n");
-  http_server_run_until(3000, http_server_cb, NULL);
-  printf("yay\n");
+  SpotifyAuth *auth = spotify_auth_new_from_oauth();
+  printf("%s\n", auth->access_token);
+  printf("done!\n");
 }

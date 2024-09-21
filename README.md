@@ -16,4 +16,4 @@ meson compile
 
 - `chafa` >=1.14.4
 - `libcurl` >=7.87.0
-- `jansson` ==2.14 (from source)
+- `jansson` ==2.14 (automatically pulled / built from source)

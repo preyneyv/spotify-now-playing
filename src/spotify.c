@@ -1,4 +1,6 @@
 #include "spotify.h"
+#include "constants.h"
+#include "http-server.h"
 #include "jansson.h"
 #include <curl/curl.h>
 #include <curl/easy.h>
@@ -112,6 +114,36 @@ int fake_fetch_api(void) {
   return 0;
 }
 
+struct spotify_auth_cb_params {
+  char res[512];
+  char success;
+};
+
+int spotify_auth_http_callback(HttpRequest *req, HttpResponse *res, void *out) {
+  struct spotify_auth_cb_params *params = out;
+  if (strcmp(req->path, "/") == 0 && req->method == HTTP_METHOD_GET) {
+    const char *code = http_request_query_get(req, "code");
+    if (code) {
+      strcpy(params->res, code);
+      params->success = 1;
+
+      res->code = 200;
+      sprintf(res->body, "Success! You can close this tab now.");
+    } else {
+      const char *error = http_request_query_get(req, "error");
+      strcpy(params->res, error);
+      params->success = 0;
+
+      res->code = 401;
+      sprintf(res->body, "One of us goofed, and it wasnt me.<br><pre>%s</pre>",
+              error);
+    }
+
+    return 1;
+  }
+  return 0;
+}
+
 SpotifyAuth *spotify_auth_new_from_oauth(void) {
   // Make OAuth2 authorize endpoints
   printf("Open this URL in your browser:\n");
@@ -126,20 +158,19 @@ SpotifyAuth *spotify_auth_new_from_oauth(void) {
          "&response_type=code"
          "\n\n");
 
-  printf("Paste the redirected URL: ");
-  char url[512];
-  if (scanf("%s", url) != 1) {
+  printf("Waiting for code...\n");
+  struct spotify_auth_cb_params result;
+  if (http_server_run_until(SNP_SPOTIFY_AUTH_PORT, spotify_auth_http_callback,
+                            &result) != 0) {
+    perror("http_server_run_until");
     return NULL;
   }
-  char *authorization_code = strchr(url, '=');
-  if (!authorization_code) {
-    fprintf(stderr,
-            "invalid response url provided: couldn't find `=` in url.\n");
-    return NULL;
-  }
-  authorization_code += 1; // skip `=`
 
-  printf("Fetching access token...\n");
+  if (!result.success) {
+    fprintf(stderr, "unable to retrieve authorization code: %s\n", result.res);
+    return NULL;
+  }
+  char *authorization_code = result.res;
 
   char request_body[512];
   sprintf(request_body,

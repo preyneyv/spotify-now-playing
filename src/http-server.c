@@ -181,12 +181,11 @@ int http_server_run_until(unsigned short port,
 
       // reset response data
       strcpy(response.content_type, "text/html");
-      response.code = 200;
+      response.code = 404;
       response.body[0] = 0;
 
       // parse request
       HttpRequest *request = http_request_parse_message(buf);
-
       should_exit = callback(request, &response, user_data);
       http_request_free(request);
 
