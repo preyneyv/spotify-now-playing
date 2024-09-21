@@ -204,12 +204,9 @@ SpotifyAuth *spotify_auth_new_from_oauth(void) {
   return auth;
 
 cleanup_curl:
-  if (response)
-    response_buffer_free(response);
-  if (curl)
-    curl_easy_cleanup(curl);
-  if (headers)
-    curl_slist_free_all(headers);
+  response_buffer_free(response);
+  curl_easy_cleanup(curl);
+  curl_slist_free_all(headers);
   return NULL;
 }
 

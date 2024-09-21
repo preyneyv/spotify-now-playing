@@ -1,9 +1,18 @@
+#include <string.h>
+#include <sys/_endian.h>
+#include <sys/_types/_socklen_t.h>
+#include <unistd.h>
+
 #include <chafa.h>
 #include <jansson.h>
+#include <netinet/in.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
+#include "http-server.h"
 #include "spotify.h"
 #include "term-util.h"
 
@@ -70,18 +79,16 @@ void print_test_pattern(void) {
   chafa_symbol_map_unref(symbol_map);
 }
 
-int main(void) {
-  printf("spoootify!\n");
-
-  SpotifyAuth *auth = spotify_auth_new_from_oauth();
-  if (!auth) {
-    printf("lol failure\n");
-    return 0;
-  }
-  printf("access:   %s\n", auth->access_token);
-  printf("refresh:  %s\n", auth->refresh_token);
-  printf("expires:  %ld\n", auth->expires_at);
-  spotify_auth_free(auth);
-
+#define CB_PORT 3000
+int http_server_cb(HttpRequest *req, HttpResponse *res, void *usr) {
+  res->code = 404;
+  sprintf(res->body, "you said %s to %s", http_request_query_get(req, "param"),
+          req->path);
   return 0;
+}
+
+int main(void) {
+  printf("waiting...\n");
+  http_server_run_until(3000, http_server_cb, NULL);
+  printf("yay\n");
 }
