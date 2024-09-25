@@ -1,18 +1,16 @@
-#include <string.h>
 #include <sys/_endian.h>
 #include <sys/_types/_socklen_t.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <chafa.h>
 #include <jansson.h>
 #include <netinet/in.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include "http-server.h"
 #include "spotify.h"
 #include "term-util.h"
 
@@ -79,8 +77,44 @@ void print_test_pattern(void) {
   chafa_symbol_map_unref(symbol_map);
 }
 
+void ui_setup() { term_cursor_save(); }
+
+void ui_render(SpotifyCurrentlyPlaying *playing) {
+  term_rel_clear();
+
+  term_rel_cursor(17, 2);
+  printf(term_c_bold("%s") "\n", playing->track_name);
+
+  term_rel_cursor(17, 3);
+  printf(term_c_dim("%s") "\n", playing->album_name);
+
+  term_rel_cursor(17, 5);
+  printf("%s\n", playing->artists[0]);
+  term_rel_cursor(3, 1);
+  printf("┌──────────┐\n");
+  term_rel_cursor(3, 6);
+  printf("└──────────┘\n");
+}
+
 int main(void) {
+  ui_setup();
+
   SpotifyAuth *auth = spotify_auth_new_from_oauth();
-  printf("%s\n", auth->access_token);
-  printf("done!\n");
+  if (!auth)
+    return EXIT_FAILURE;
+
+  u_char it = 0;
+  SpotifyCurrentlyPlaying *playing = NULL;
+  while (1) {
+    if (it == 0) {
+      printf(term_c_dim("\n  fetching...\n\n"));
+      spotify_currently_playing_free(playing);
+      playing = spotify_currently_playing_get(auth);
+    }
+    it = (it + 1) % 4;
+
+    ui_render(playing);
+
+    sleep(1);
+  }
 }

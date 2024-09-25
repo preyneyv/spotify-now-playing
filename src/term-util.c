@@ -1,4 +1,5 @@
 #include "term-util.h"
+#include <stdio.h>
 
 void detect_terminal_mode(ChafaTermInfo **term_info_out,
                           ChafaCanvasMode *mode_out,
@@ -13,16 +14,16 @@ void detect_terminal_mode(ChafaTermInfo **term_info_out,
   g_strfreev(envp);
 
   // Determine what the best possible image quality setting is.
-  if (chafa_term_info_have_seq(term_info,
-                               CHAFA_TERM_SEQ_BEGIN_KITTY_IMMEDIATE_IMAGE_V1)) {
+  if (chafa_term_info_have_seq(term_info, CHAFA_TERM_SEQ_BEGIN_SIXELS)) {
+    pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
+    mode = CHAFA_CANVAS_MODE_TRUECOLOR;
+  } else if (chafa_term_info_have_seq(
+                 term_info, CHAFA_TERM_SEQ_BEGIN_KITTY_IMMEDIATE_IMAGE_V1)) {
     pixel_mode = CHAFA_PIXEL_MODE_KITTY;
     mode = CHAFA_CANVAS_MODE_TRUECOLOR;
   } else if (chafa_term_info_have_seq(term_info,
                                       CHAFA_TERM_SEQ_BEGIN_ITERM2_IMAGE)) {
     pixel_mode = CHAFA_PIXEL_MODE_ITERM2;
-    mode = CHAFA_CANVAS_MODE_TRUECOLOR;
-  } else if (chafa_term_info_have_seq(term_info, CHAFA_TERM_SEQ_BEGIN_SIXELS)) {
-    pixel_mode = CHAFA_PIXEL_MODE_SIXELS;
     mode = CHAFA_CANVAS_MODE_TRUECOLOR;
   } else {
     pixel_mode = CHAFA_PIXEL_MODE_SYMBOLS;
@@ -94,4 +95,10 @@ TermSize get_tty_size() {
   }
 
   return term_size;
+}
+
+inline void term_cursor_save() { printf(TERM_ESC "7"); }
+inline void term_rel_clear() { printf(TERM_CURSOR_RESTORE TERM_ESC "[0J"); }
+inline void term_rel_cursor(int x, int y) {
+  printf(TERM_CURSOR_RESTORE TERM_ESC "[%dB" TERM_ESC "[%dG", y, x);
 }

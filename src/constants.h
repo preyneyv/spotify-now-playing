@@ -11,4 +11,8 @@
 #define SNP_SPOTIFY_AUTH_AUTHORIZE_ENDPOINT SNP_SPOTIFY_AUTH_HOST "/authorize"
 #define SNP_SPOTIFY_AUTH_TOKEN_ENDPOINT SNP_SPOTIFY_AUTH_HOST "/api/token"
 
+#define SNP_SPOTIFY_API_HOST "https://api.spotify.com/v1"
+#define SNP_SPOTIFY_API_CURRENTLY_PLAYING                                      \
+  SNP_SPOTIFY_API_HOST "/me/player/currently-playing"
+
 #endif /* __SNP_CONSTANTS_H__ */

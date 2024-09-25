@@ -1,12 +1,14 @@
-#include "spotify.h"
-#include "constants.h"
-#include "http-server.h"
-#include "jansson.h"
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "constants.h"
+#include "http-server.h"
+#include "jansson.h"
+#include "nanojpeg.c"
+#include "spotify.h"
 
 /** Allocate a new empty MemoryBuffer */
 ResponseBuffer *response_buffer_new() {
@@ -43,6 +45,11 @@ size_t response_buffer_write_bytes(ResponseBuffer *buf, char *data,
   return size;
 }
 
+size_t response_buffer_set_bytes(ResponseBuffer *buf, char *data, size_t size) {
+  buf->size = 0;
+  return response_buffer_write_bytes(buf, data, size);
+}
+
 size_t response_buffer_libcurl_write_function(char *data, size_t size,
                                               size_t nmemb,
                                               ResponseBuffer *buf) {
@@ -56,62 +63,6 @@ void response_buffer_free(ResponseBuffer *buf) {
     return;
   free(buf->contents);
   free(buf);
-}
-
-int fake_fetch_api(void) {
-  ResponseBuffer *response;
-
-  {
-    CURL *curl;
-    CURLcode res;
-
-    if (!(curl = curl_easy_init())) {
-      curl_easy_cleanup(curl);
-      return 1;
-    }
-    curl_easy_setopt(curl, CURLOPT_URL,
-                     "https://jsonplaceholder.typicode.com/todos/1");
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
-
-    response = response_buffer_new();
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-                     response_buffer_libcurl_write_function);
-
-    if ((res = curl_easy_perform(curl)) != CURLE_OK) {
-      fprintf(stderr, "curl_easy_perform() failed: %s\n",
-              curl_easy_strerror(res));
-      curl_easy_cleanup(curl);
-      response_buffer_free(response);
-      return 1;
-    }
-
-    curl_easy_cleanup(curl);
-  }
-
-  json_t *root;
-  json_error_t error;
-  root = json_loads(response->contents, 0, &error);
-  response_buffer_free(response);
-
-  if (!root) {
-    fprintf(stderr, "error: on line %d: %s\n", error.line, error.text);
-    return 1;
-  }
-
-  if (!json_is_object(root)) {
-    fprintf(stderr, "error: not an array\n");
-    return 1;
-  }
-
-  printf("title from api: %s\n",
-         json_string_value(json_object_get(root, "title")));
-  json_decref(root);
-  printf("is completed?: %s\n",
-         json_boolean_value(json_object_get(root, "completed")) ? "yes" : "no");
-  json_decref(root);
-
-  return 0;
 }
 
 struct spotify_auth_cb_params {
@@ -218,7 +169,7 @@ SpotifyAuth *spotify_auth_new_from_oauth(void) {
   response_buffer_free(response);
 
   if (!root) {
-    fprintf(stderr, "unable to parse response json: line %d\n%s", error.line,
+    fprintf(stderr, "unable to parse response json: line %d\n%s\n", error.line,
             error.text);
     return NULL;
   }
@@ -242,3 +193,177 @@ cleanup_curl:
 }
 
 void spotify_auth_free(SpotifyAuth *auth) { free(auth); }
+
+void spotify_auth_refresh_if_required(SpotifyAuth *auth) {
+  if (!auth)
+    return;
+  // TODO: implement
+}
+
+json_t *spotify_api_get(const char *endpoint, SpotifyAuth *auth) {
+  if (!auth) {
+    fprintf(stderr, "no auth session found\n");
+    exit(1);
+  }
+  spotify_auth_refresh_if_required(auth);
+
+  CURL *curl = curl_easy_init();
+  CURLcode res;
+
+  curl_easy_setopt(curl, CURLOPT_URL, endpoint);
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+
+  char authorization_header[512];
+  sprintf(authorization_header, "Authorization: Bearer %s", auth->access_token);
+  struct curl_slist *headers = curl_slist_append(NULL, authorization_header);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+  ResponseBuffer *response = response_buffer_new();
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                   response_buffer_libcurl_write_function);
+
+  if ((res = curl_easy_perform(curl)) != CURLE_OK) {
+    fprintf(stderr, "spotify api network request failed: %s\n",
+            curl_easy_strerror(res));
+    goto cleanup_curl;
+  }
+  long code;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+  if (code > 299) {
+    fprintf(stderr, "server responded with code: %ld\n%s\n", code,
+            response->contents);
+    goto cleanup_curl;
+  }
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+
+  if (response->size == 0) {
+    return NULL;
+  }
+
+  json_error_t error;
+  json_t *root = json_loads(response->contents, 0, &error);
+  response_buffer_free(response);
+  if (!root) {
+    fprintf(stderr, "unable to parse response json: line %d\n%s\n", error.line,
+            error.text);
+    return NULL;
+  }
+  return root;
+
+cleanup_curl:
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  exit(1);
+}
+
+SpotifyAlbumCover *spotify_album_cover_from_jpeg(ResponseBuffer *buf) {
+  if (!buf)
+    return NULL;
+  SpotifyAlbumCover *ret = NULL;
+
+  njInit();
+  if (njDecode(buf->contents, buf->size)) {
+    fprintf(stderr, "error decoding jpeg\n");
+    goto cleanup;
+  }
+
+  ret = malloc(sizeof(*ret));
+  ret->width = njGetWidth();
+  ret->height = njGetHeight();
+  response_buffer_set_bytes(buf, (char *)njGetImage(), njGetImageSize());
+  njDone();
+  ret->pixels = (unsigned char *)buf->contents;
+
+  free(buf);
+
+cleanup:
+  return ret;
+}
+
+void spotify_album_cover_free(SpotifyAlbumCover *album) {
+  if (!album)
+    return;
+  free(album->pixels);
+  free(album);
+}
+
+ResponseBuffer *response_buffer_new_from_url(const char *url) {
+  ResponseBuffer *ret = NULL;
+  CURL *curl = curl_easy_init();
+  CURLcode res;
+
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
+
+  ResponseBuffer *response = response_buffer_new();
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, response);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                   response_buffer_libcurl_write_function);
+
+  if ((res = curl_easy_perform(curl)) != CURLE_OK) {
+    fprintf(stderr, "network request failed: %s\n", curl_easy_strerror(res));
+    goto cleanup;
+  }
+
+  long code;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+  if (code > 299) {
+    fprintf(stderr, "server responded with code: %ld\n%s\n", code,
+            response->contents);
+    goto cleanup;
+  }
+
+  ret = response;
+
+cleanup:
+  curl_easy_cleanup(curl);
+  return ret;
+}
+
+SpotifyCurrentlyPlaying *spotify_currently_playing_get(SpotifyAuth *auth) {
+  SpotifyCurrentlyPlaying *ret = malloc(sizeof(*ret));
+  json_t *root = spotify_api_get(SNP_SPOTIFY_API_CURRENTLY_PLAYING, auth);
+  ret->__root = root;
+  if (!root) {
+    printf("Nothing is playing...\n");
+    return ret;
+  }
+
+  const char *track_type =
+      json_string_value(json_object_get(root, "currently_playing_type"));
+  if (strcmp(track_type, "track") != 0) {
+    printf("Item being played is not a track.\n");
+    return ret;
+  }
+
+  json_t *item = json_object_get(root, "item");
+  json_t *album = json_object_get(item, "album");
+
+  const char *album_url = json_string_value(json_object_get(
+      json_array_get(json_object_get(album, "images"), 0), "url"));
+  ret->album_name = json_string_value(json_object_get(album, "name"));
+  ret->track_name = json_string_value(json_object_get(item, "name"));
+
+  size_t artist_i;
+  json_t *artist;
+  json_array_foreach(json_object_get(item, "artists"), artist_i, artist) {
+    if (artist_i > 2)
+      break;
+    ret->artists[artist_i] = json_string_value(json_object_get(artist, "name"));
+  }
+
+  ResponseBuffer *img_buf = response_buffer_new_from_url(album_url);
+  ret->album_cover = spotify_album_cover_from_jpeg(img_buf);
+
+  return ret;
+}
+
+void spotify_currently_playing_free(SpotifyCurrentlyPlaying *playing) {
+  if (!playing)
+    return;
+  json_decref(playing->__root);
+  spotify_album_cover_free(playing->album_cover);
+  free(playing);
+}

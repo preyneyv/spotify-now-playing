@@ -3,12 +3,7 @@
 
 #include <curl/curl.h>
 #include <jansson.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <time.h>
-
-#include "constants.h"
 
 /** Null-terminated resizable buffer. */
 typedef struct {
@@ -32,6 +27,8 @@ ResponseBuffer *response_buffer_new_with_size(size_t size);
 size_t response_buffer_write_bytes(ResponseBuffer *buf, char *data,
                                    size_t size);
 
+size_t response_buffer_set_bytes(ResponseBuffer *buf, char *data, size_t size);
+
 size_t response_buffer_libcurl_write_function(char *data, size_t size,
                                               size_t nmemb,
                                               ResponseBuffer *buf);
@@ -44,8 +41,27 @@ typedef struct {
   char refresh_token[160];
   time_t expires_at;
 } SpotifyAuth;
-
 SpotifyAuth *spotify_auth_new_from_oauth(void);
 void spotify_auth_free(SpotifyAuth *auth);
+
+json_t *spotify_api_get(const char *endpoint, SpotifyAuth *auth);
+
+typedef struct {
+  int width;
+  int height;
+  unsigned char *pixels;
+} SpotifyAlbumCover;
+SpotifyAlbumCover *spotify_album_cover_from_jpeg(ResponseBuffer *buf);
+void spotify_album_cover_free(SpotifyAlbumCover *album);
+
+typedef struct {
+  const char *album_name;
+  const char *track_name;
+  const char *artists[3];
+  SpotifyAlbumCover *album_cover;
+  json_t *__root;
+} SpotifyCurrentlyPlaying;
+SpotifyCurrentlyPlaying *spotify_currently_playing_get(SpotifyAuth *auth);
+void spotify_currently_playing_free(SpotifyCurrentlyPlaying *playing);
 
 #endif /* __SNP_SPOTIFY_H__ */
