@@ -26,5 +26,21 @@ TermSize get_tty_size();
 void term_cursor_save();
 void term_rel_clear();
 void term_rel_cursor(int x, int y);
+void term_print_image(unsigned char *buffer, int width, int height, int stride,
+                      int t_width, int t_height);
+
+struct term_dimensions {
+  int w_cell;
+  int h_cell;
+
+  int w_px;
+  int h_px;
+
+  int cw_px;
+  int ch_px;
+
+  float font_ratio;
+};
+struct term_dimensions get_term_dimensions();
 
 #endif /* __SNP_TERM_UTIL_H__ */

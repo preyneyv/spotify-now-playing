@@ -9,6 +9,7 @@
 #include "jansson.h"
 #include "nanojpeg.c"
 #include "spotify.h"
+#include "src/jansson.h"
 
 /** Allocate a new empty MemoryBuffer */
 ResponseBuffer *response_buffer_new() {

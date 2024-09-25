@@ -55,6 +55,7 @@ SpotifyAlbumCover *spotify_album_cover_from_jpeg(ResponseBuffer *buf);
 void spotify_album_cover_free(SpotifyAlbumCover *album);
 
 typedef struct {
+  const char *id;
   const char *album_name;
   const char *track_name;
   const char *artists[3];

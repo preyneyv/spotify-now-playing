@@ -102,3 +102,66 @@ inline void term_rel_clear() { printf(TERM_CURSOR_RESTORE TERM_ESC "[0J"); }
 inline void term_rel_cursor(int x, int y) {
   printf(TERM_CURSOR_RESTORE TERM_ESC "[%dB" TERM_ESC "[%dG", y, x);
 }
+
+struct term_dimensions get_term_dimensions() {
+  TermSize term_size = get_tty_size();
+  struct term_dimensions out = {.h_cell = term_size.height_cells,
+                                .w_cell = term_size.width_cells,
+                                .w_px = term_size.width_pixels,
+                                .h_px = term_size.height_pixels,
+                                .font_ratio = 0.5,
+                                .cw_px = -1,
+                                .ch_px = -1};
+
+  if (term_size.width_cells > 0 && term_size.height_cells > 0 &&
+      term_size.width_pixels > 0 && term_size.height_pixels > 0) {
+    out.cw_px = term_size.width_pixels / term_size.width_cells;
+    out.ch_px = term_size.height_pixels / term_size.height_cells;
+    out.font_ratio = (gdouble)out.cw_px / (gdouble)out.ch_px;
+  }
+  return out;
+}
+
+// void term_print_image(unsigned char *buffer, int width, int height, int
+// stride,
+//                       int t_width, int t_height) {
+//   ChafaSymbolMap *symbol_map;
+//   ChafaCanvasConfig *config;
+//   ChafaTermInfo *term_info;
+//   ChafaCanvas *canvas;
+
+//   struct term_dimensions dim = get_term_dimensions();
+
+//   int width_cells = t_width;
+//   int height_cells = t_height;
+//   chafa_calc_canvas_geometry(width, height, &width_cells, &height_cells,
+//                              dim.font_ratio, TRUE, FALSE);
+
+//   symbol_map = chafa_symbol_map_new();
+//   chafa_symbol_map_add_by_tags(symbol_map, CHAFA_SYMBOL_TAG_ASCII);
+
+//   config = chafa_canvas_config_new();
+//   chafa_canvas_config_set_symbol_map(config, symbol_map);
+//   chafa_canvas_config_set_canvas_mode(config, mode);
+//   chafa_canvas_config_set_pixel_mode(config, pixel_mode);
+//   chafa_canvas_config_set_geometry(config, width_cells, height_cells);
+//   if (dim.ch_px > 0 && dim.cw_px > 0)
+//     chafa_canvas_config_set_cell_geometry(config, dim.cw_px, dim.ch_px);
+
+//   canvas = chafa_canvas_new(config);
+//   chafa_canvas_draw_all_pixels(canvas, CHAFA_PIXEL_RGB8, buffer, width,
+//   height,
+//                                stride);
+
+//   GString *gs = chafa_canvas_print(canvas, term_info);
+//   fwrite(gs->str, sizeof(char), gs->len, stdout);
+//   fputc('\n', stdout);
+//   g_string_free(gs, TRUE);
+
+//   // chafa_term_info_emit
+
+//   chafa_canvas_unref(canvas);
+//   chafa_term_info_unref(term_info);
+//   chafa_canvas_config_unref(config);
+//   chafa_symbol_map_unref(symbol_map);
+// }
